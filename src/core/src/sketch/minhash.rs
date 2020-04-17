@@ -4,6 +4,7 @@ use std::convert::TryFrom;
 use std::f64::consts::PI;
 use std::iter::{Iterator, Peekable};
 use std::str;
+use std::sync::Mutex;
 
 use failure::Error;
 use once_cell::sync::Lazy;
@@ -74,7 +75,7 @@ pub fn scaled_for_max_hash(max_hash: u64) -> u64 {
 }
 
 #[cfg_attr(all(target_arch = "wasm32", target_vendor = "unknown"), wasm_bindgen)]
-#[derive(Debug, Clone, PartialEq, TypedBuilder)]
+#[derive(Debug, TypedBuilder)]
 pub struct KmerMinHash {
     num: u32,
     ksize: u32,
@@ -93,6 +94,31 @@ pub struct KmerMinHash {
 
     #[builder(default)]
     abunds: Option<Vec<u64>>,
+
+    #[builder(default)]
+    md5sum: Mutex<Option<String>>,
+}
+
+impl PartialEq for KmerMinHash {
+    fn eq(&self, other: &KmerMinHash) -> bool {
+        // TODO: check all other fields?
+        self.md5sum() == other.md5sum()
+    }
+}
+
+impl Clone for KmerMinHash {
+    fn clone(&self) -> Self {
+        KmerMinHash {
+            num: self.num,
+            ksize: self.ksize,
+            hash_function: self.hash_function,
+            seed: self.seed,
+            max_hash: self.max_hash,
+            mins: self.mins.clone(),
+            abunds: self.abunds.clone(),
+            md5sum: Mutex::new(Some(self.md5sum())),
+        }
+    }
 }
 
 impl Default for KmerMinHash {
@@ -105,6 +131,7 @@ impl Default for KmerMinHash {
             max_hash: 0,
             mins: Vec::with_capacity(1000),
             abunds: None,
+            md5sum: Mutex::new(None),
         }
     }
 }
@@ -148,7 +175,7 @@ impl<'de> Deserialize<'de> for KmerMinHash {
             ksize: u32,
             seed: u64,
             max_hash: u64,
-            //md5sum: String,
+            md5sum: String,
             mins: Vec<u64>,
             abundances: Option<Vec<u64>>,
             molecule: String,
@@ -184,6 +211,7 @@ impl<'de> Deserialize<'de> for KmerMinHash {
             ksize: tmpsig.ksize,
             seed: tmpsig.seed,
             max_hash: tmpsig.max_hash,
+            md5sum: Mutex::new(Some(tmpsig.md5sum)),
             mins,
             abunds,
             hash_function,
@@ -223,6 +251,7 @@ impl KmerMinHash {
             max_hash,
             mins,
             abunds,
+            md5sum: Mutex::new(None),
         }
     }
 
@@ -291,12 +320,16 @@ impl KmerMinHash {
     }
 
     pub fn md5sum(&self) -> String {
-        let mut md5_ctx = md5::Context::new();
-        md5_ctx.consume(self.ksize().to_string());
-        self.mins
-            .iter()
-            .for_each(|x| md5_ctx.consume(x.to_string()));
-        format!("{:x}", md5_ctx.compute())
+        let mut data = self.md5sum.lock().unwrap();
+        if data.is_none() {
+            let mut md5_ctx = md5::Context::new();
+            md5_ctx.consume(self.ksize().to_string());
+            self.mins
+                .iter()
+                .for_each(|x| md5_ctx.consume(x.to_string()));
+            *data = Some(format!("{:x}", md5_ctx.compute()));
+        }
+        data.clone().unwrap()
     }
 
     pub fn add_hash(&mut self, hash: u64) {
@@ -331,6 +364,8 @@ impl KmerMinHash {
             self.mins.push(hash);
             if let Some(ref mut abunds) = self.abunds {
                 abunds.push(abundance);
+                // Reset md5sum
+                self.md5sum = Default::default()
             }
             return;
         }
@@ -365,6 +400,8 @@ impl KmerMinHash {
                         abunds.pop();
                     }
                 }
+                // Reset md5sum
+                self.md5sum = Default::default()
             } else if let Some(ref mut abunds) = self.abunds {
                 // pos == hash: hash value already in mins, inc count by abundance
                 abunds[pos] += abundance;
@@ -384,6 +421,8 @@ impl KmerMinHash {
                 if let Some(ref mut abunds) = self.abunds {
                     abunds.remove(pos);
                 }
+                // Reset md5sum
+                self.md5sum = Default::default();
             }
         };
     }
@@ -494,6 +533,10 @@ impl KmerMinHash {
                 Some(merged_abunds.into_iter().take(self.num as usize).collect())
             }
         }
+
+        // Reset md5sum
+        self.md5sum = Default::default();
+
         Ok(())
     }
 
