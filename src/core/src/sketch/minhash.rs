@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::f64::consts::PI;
+use std::fmt::Write;
 use std::iter::{Iterator, Peekable};
 use std::str;
 use std::sync::Mutex;
@@ -319,14 +320,27 @@ impl KmerMinHash {
         self.abunds = None;
     }
 
+    fn reset_md5sum(&self) {
+        let mut data = self.md5sum.lock().unwrap();
+        if data.is_some() {
+            *data = None;
+        }
+    }
+
     pub fn md5sum(&self) -> String {
         let mut data = self.md5sum.lock().unwrap();
         if data.is_none() {
+            let mut buffer = String::with_capacity(20);
+
             let mut md5_ctx = md5::Context::new();
-            md5_ctx.consume(self.ksize().to_string());
-            self.mins
-                .iter()
-                .for_each(|x| md5_ctx.consume(x.to_string()));
+            write!(&mut buffer, "{}", self.ksize()).unwrap();
+            md5_ctx.consume(&buffer);
+            buffer.clear();
+            for x in &self.mins {
+                write!(&mut buffer, "{}", x).unwrap();
+                md5_ctx.consume(&buffer);
+                buffer.clear();
+            }
             *data = Some(format!("{:x}", md5_ctx.compute()));
         }
         data.clone().unwrap()
@@ -364,8 +378,7 @@ impl KmerMinHash {
             self.mins.push(hash);
             if let Some(ref mut abunds) = self.abunds {
                 abunds.push(abundance);
-                // Reset md5sum
-                self.md5sum = Default::default()
+                self.reset_md5sum();
             }
             return;
         }
@@ -400,8 +413,7 @@ impl KmerMinHash {
                         abunds.pop();
                     }
                 }
-                // Reset md5sum
-                self.md5sum = Default::default()
+                self.reset_md5sum();
             } else if let Some(ref mut abunds) = self.abunds {
                 // pos == hash: hash value already in mins, inc count by abundance
                 abunds[pos] += abundance;
@@ -421,8 +433,7 @@ impl KmerMinHash {
                 if let Some(ref mut abunds) = self.abunds {
                     abunds.remove(pos);
                 }
-                // Reset md5sum
-                self.md5sum = Default::default();
+                self.reset_md5sum();
             }
         };
     }
@@ -534,9 +545,7 @@ impl KmerMinHash {
             }
         }
 
-        // Reset md5sum
-        self.md5sum = Default::default();
-
+        self.reset_md5sum();
         Ok(())
     }
 
