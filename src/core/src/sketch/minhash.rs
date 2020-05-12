@@ -733,6 +733,10 @@ impl KmerMinHash {
         self.mins.clone()
     }
 
+    pub fn iter_mins(&self) -> impl Iterator<Item = &u64> {
+        self.mins.iter()
+    }
+
     pub fn abunds(&self) -> Option<Vec<u64>> {
         self.abunds.clone()
     }
