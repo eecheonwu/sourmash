@@ -5,7 +5,6 @@ use std::f64::consts::PI;
 use std::iter::{Iterator, Peekable};
 use std::str;
 
-use failure::Error;
 use once_cell::sync::Lazy;
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
@@ -13,8 +12,8 @@ use serde_derive::Deserialize;
 use typed_builder::TypedBuilder;
 
 use crate::_hash_murmur;
-use crate::errors::SourmashError;
 use crate::signature::SigsTrait;
+use crate::Error;
 
 #[cfg(all(target_arch = "wasm32", target_vendor = "unknown"))]
 use wasm_bindgen::prelude::*;
@@ -259,7 +258,7 @@ impl KmerMinHash {
 
     pub fn set_hash_function(&mut self, h: HashFunctions) -> Result<(), Error> {
         if !self.is_empty() {
-            return Err(SourmashError::NonEmptyMinHash {
+            return Err(Error::NonEmptyMinHash {
                 message: "hash_function".into(),
             }
             .into());
@@ -275,7 +274,7 @@ impl KmerMinHash {
 
     pub fn enable_abundance(&mut self) -> Result<(), Error> {
         if !self.mins.is_empty() {
-            return Err(SourmashError::NonEmptyMinHash {
+            return Err(Error::NonEmptyMinHash {
                 message: "track_abundance=True".into(),
             }
             .into());
@@ -736,7 +735,7 @@ impl SigsTrait for KmerMinHash {
     fn check_compatible(&self, other: &KmerMinHash) -> Result<(), Error> {
         /*
         if self.num != other.num {
-            return Err(SourmashError::MismatchNum {
+            return Err(Error::MismatchNum {
                 n1: self.num,
                 n2: other.num,
             }
@@ -744,17 +743,17 @@ impl SigsTrait for KmerMinHash {
         }
         */
         if self.ksize != other.ksize {
-            return Err(SourmashError::MismatchKSizes.into());
+            return Err(Error::MismatchKSizes.into());
         }
         if self.hash_function != other.hash_function {
             // TODO: fix this error
-            return Err(SourmashError::MismatchDNAProt.into());
+            return Err(Error::MismatchDNAProt.into());
         }
         if self.max_hash != other.max_hash {
-            return Err(SourmashError::MismatchScaled.into());
+            return Err(Error::MismatchScaled.into());
         }
         if self.seed != other.seed {
-            return Err(SourmashError::MismatchSeed.into());
+            return Err(Error::MismatchSeed.into());
         }
         Ok(())
     }
@@ -805,7 +804,7 @@ impl SigsTrait for KmerMinHash {
                 if !is_valid_kmer(i) {
                     if !force {
                         // throw error if DNA is not valid
-                        return Err(SourmashError::InvalidDNA {
+                        return Err(Error::InvalidDNA {
                             message: String::from_utf8(kmer.to_vec()).unwrap(),
                         }
                         .into());
@@ -863,7 +862,7 @@ impl SigsTrait for KmerMinHash {
             HashFunctions::murmur64_dayhoff => seq.iter().cloned().map(aa_to_dayhoff).collect(),
             HashFunctions::murmur64_hp => seq.iter().cloned().map(aa_to_hp).collect(),
             invalid => {
-                return Err(SourmashError::InvalidHashFunction {
+                return Err(Error::InvalidHashFunction {
                     function: format!("{}", invalid),
                 }
                 .into())
@@ -1157,7 +1156,7 @@ pub(crate) fn translate_codon(codon: &[u8]) -> Result<u8, Error> {
         }
     }
 
-    Err(SourmashError::InvalidCodonLength {
+    Err(Error::InvalidCodonLength {
         message: format!("{}", codon.len()),
     }
     .into())
